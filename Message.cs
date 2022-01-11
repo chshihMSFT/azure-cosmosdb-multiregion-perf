@@ -16,6 +16,8 @@ namespace azure_cosmosdb_multiregion_perf
         public long mEpochtime { get; set; }
         public long _ts { get; set; }
 
+        public string sessionToken { get; set; }
+
     }
     
 }

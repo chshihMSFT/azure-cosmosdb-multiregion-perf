@@ -109,8 +109,9 @@ namespace azure_cosmosdb_multiregion_perf
                                 try
                                 {
                                     response = task.Result;
-                                    Console.WriteLine($"{ DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fffffff")}, writeDocument.ok, {{{message.id}, {message.mTenant.PadLeft(3)}, {message.mBatch.ToString().PadLeft(3)}, {message.mSerial.ToString().PadLeft(3)}, {message.mTimestamp}, {message.mEpochtime}}}");
-                                    queueMessage = String.Format(@"{{""id"":""{0}"", ""mTenant"":""{1}"", ""mEpochtime"":""{2}"", ""_ts"":""{3}""}}", response.Resource.id, response.Resource.mTenant, response.Resource.mEpochtime, response.Resource._ts);
+                                    String sessionToken = response.Headers.Session;
+                                    Console.WriteLine($"{ DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fffffff")}, writeDocument.ok, {{{message.id}, {message.mTenant.PadLeft(3)}, {message.mBatch.ToString().PadLeft(3)}, {message.mSerial.ToString().PadLeft(3)}, {message.mTimestamp}, {message.mEpochtime}}}, sessionToken:{sessionToken}");
+                                    queueMessage = String.Format(@"{{""id"":""{0}"", ""mTenant"":""{1}"", ""mEpochtime"":""{2}"", ""_ts"":""{3}"", ""sessionToken"":""{4}""}}", response.Resource.id, response.Resource.mTenant, response.Resource.mEpochtime, response.Resource._ts, sessionToken);
 
                                     var queueresponse = queueClient.SendMessageAsync(queueMessage);
                                     //Console.WriteLine($"{ DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fffffff")}, MessageEnqueued.ok, {queueMessage}");
@@ -138,9 +139,13 @@ namespace azure_cosmosdb_multiregion_perf
                 foreach (QueueMessage queuemessage in queueClient.ReceiveMessages(maxMessages: 32).Value)                
                 {
                     Message docmessage = JsonConvert.DeserializeObject<Message>(queuemessage.Body.ToString());
+                    String sessionToken = docmessage.sessionToken;
+                    ItemRequestOptions options = new ItemRequestOptions();
+                    options.SessionToken = sessionToken;
+
                     //Console.WriteLine($"{ DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fffffff")}, MessageDequeued.ok, {queuemessage.Body}");
 
-                    tasksReceiver.Add(container.ReadItemAsync<Message>(docmessage.id, new PartitionKey(docmessage.mTenant))
+                    tasksReceiver.Add(container.ReadItemAsync<Message>(docmessage.id, new PartitionKey(docmessage.mTenant), options)
                         .ContinueWith((Task<ItemResponse<Message>> task) =>
                         {
                             try
@@ -159,7 +164,8 @@ namespace azure_cosmosdb_multiregion_perf
                                     $", queueInsertedOn: {((DateTimeOffset)queuemessage.InsertedOn).ToUnixTimeMilliseconds().ToString().PadRight(5)}" +
                                     $", nowEpoch: {nowEpoch.ToString()}" +
                                     $", DequeueDelay: {DequeueDelay.ToString().PadLeft(6)} ms" +
-                                    $", ReadDelay: {ReadDelay.ToString().PadLeft(6)} ms"
+                                    $", ReadDelay: {ReadDelay.ToString().PadLeft(6)} ms" +
+                                    $", sessionToken: {sessionToken}"
                                     );
                             }
                             catch (Exception ce)
@@ -168,7 +174,7 @@ namespace azure_cosmosdb_multiregion_perf
                             }
                             finally
                             {
-                                queueClient.DeleteMessage(queuemessage.MessageId, queuemessage.PopReceipt);
+                                //queueClient.DeleteMessage(queuemessage.MessageId, queuemessage.PopReceipt);
                             }
                         }));
                 }
